@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>प्रगतीPath — Livelihood Outcome Intelligence</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{--bg:#f5f6fa;--card:#fff;--ink:#1b2340;--mut:#6b7390;--line:#e3e6f0;--pri:#1f3a8a;--acc:#f28c28;--ok:#1f9d6b;--bad:#d64545}
+@media(prefers-color-scheme:dark){:root:not([data-t=l]){--bg:#0f1426;--card:#171d35;--ink:#e8ebf7;--mut:#94a0c4;--line:#283058;--pri:#7c9cff;--acc:#f5a247;--ok:#3ccf91;--bad:#ff7a7a}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{padding:16px 24px;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);background:var(--card)}
+.brand b{font-size:20px;color:var(--pri)}.brand span{color:var(--mut);display:block;font-size:12px}
+.badge{font-size:12px;padding:3px 10px;border-radius:99px;background:var(--line);color:var(--mut)}.badge.live{background:var(--ok);color:#fff}
+nav{display:flex;gap:6px;flex-wrap:wrap;padding:12px 24px}nav button{border:1px solid var(--line);background:var(--card);color:var(--ink);padding:8px 14px;border-radius:8px;cursor:pointer;font:inherit}
+nav button.on{background:var(--pri);color:#fff;border-color:var(--pri)}
+main{padding:0 24px 40px;max-width:1200px;margin:auto}
+.bar{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}h2{margin:8px 0}h3{margin:0 0 10px;font-size:15px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:12px 0}
+.kpi,.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+.kpi small{color:var(--mut)}.kpi div{font-size:26px;font-weight:700;color:var(--pri)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px;margin-bottom:12px}.card{margin-bottom:12px}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line)}th{color:var(--mut);font-weight:600;font-size:12px}
+.tw{overflow-x:auto}.bad{color:var(--bad);font-weight:600}.ok{color:var(--ok);font-weight:600}
+select,input,textarea,button.a{font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
+button.a{background:var(--acc);color:#111;border:0;cursor:pointer;font-weight:600}
+.chips{display:flex;gap:8px;flex-wrap:wrap}.chip{padding:8px 12px;border-radius:10px;border:1px solid var(--line);min-width:110px}.chip b{display:block}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:end}.row label{display:flex;flex-direction:column;font-size:12px;color:var(--mut);gap:3px}
+.note{color:var(--mut);font-size:12px}canvas{max-height:300px}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><b>प्रगतीPath</b><span>Longitudinal livelihood outcome intelligence · Maharashtra · Silicon Horizons</span></div>
+  <div><span class="badge" id="mode">loading…</span> <span class="badge">Synthetic data</span></div>
+</header>
+<nav>
+  <button data-r="gov">Government</button><button data-r="provider">Training provider</button>
+  <button data-r="trainee">Trainee</button><button data-r="employer">Employer</button><button data-r="link">Identity linkage</button>
+</nav>
+<main id="view"></main>
+
+<script>
+const CP=[3,6,12,18,24], POS=['employed','self_employed','apprentice'];
+const LBL={employed:'Employed',self_employed:'Self-employed',apprentice:'Apprentice',unemployed:'Unemployed',no_response:'No response'};
+const COL={employed:'#1f9d6b',self_employed:'#f28c28',apprentice:'#4f7cff',unemployed:'#d64545',no_response:'#9aa3c0'};
+const VER={reported:'Self-reported',employer_verified:'Employer-confirmed',registry_matched:'Registry-matched (simulated EPFO/Udyam)'};
+const RULES={'Low salary':['salary','pay','wage','paid','stipend'],'Location / relocation':['far','distance','relocat','transfer','commute','city'],'Skill mismatch':['skill','not related','different field','irrelevant','mismatch'],'Working conditions':['hours','condition','unsafe','boss','overtime','toxic'],'Family / personal':['family','marriage','pregnan','personal','home'],'Discrimination':['caste','discriminat','gender','harass']};
+let D=[],live=false,role='gov',charts=[],filt={district:'All',provider:'All'},cur=null;
+const $=s=>document.querySelector(s), pct=(a,b)=>b?Math.round(100*a/b):0, inr=n=>'₹'+Math.round(n).toLocaleString('en-IN');
+const med=a=>{if(!a.length)return 0;a=[...a].sort((x,y)=>x-y);const h=a.length>>1;return a.length%2?a[h]:(a[h-1]+a[h])/2};
+const at=(t,m)=>t.checkpoints.find(c=>c.m===m);
+const latest=t=>[...t.checkpoints].reverse().find(c=>c.status!=='no_response');
+const uniq=k=>[...new Set(D.map(t=>t[k]))].sort();
+const opts=(arr,sel)=>arr.map(x=>`<option ${x===sel?'selected':''}>${x}</option>`).join('');
+const kpi=(l,v,s='')=>`<div class="kpi"><small>${l}</small><div>${v}</div><small>${s}</small></div>`;
+
+function metrics(L){
+  const c6=L.map(t=>at(t,6)).filter(c=>c&&c.status!=='no_response');
+  const base=L.filter(t=>at(t,3)&&POS.includes(at(t,3).status)&&at(t,6)&&at(t,6).status!=='no_response');
+  const lat=L.map(t=>[t,latest(t)]).filter(([t,c])=>c&&POS.includes(c.status));
+  const wg=L.filter(t=>at(t,3)?.wage>0&&at(t,12)?.wage>0).map(t=>100*(at(t,12).wage/at(t,3).wage-1));
+  const r={n:L.length,
+    emp6:pct(c6.filter(c=>POS.includes(c.status)).length,c6.length),
+    self6:pct(c6.filter(c=>c.status==='self_employed').length,c6.length),
+    ret6:pct(base.filter(t=>POS.includes(at(t,6).status)).length,base.length),
+    wg:Math.round(med(wg)),
+    ver:pct(lat.filter(([t])=>t.verification!=='reported').length,lat.length),
+    mis:pct(lat.filter(([t])=>!t.related).length,lat.length),
+    wage:med(lat.map(([,c])=>c.wage))};
+  r.idx=Math.round(.5*r.emp6+.5*r.ret6); return r;
+}
+function gtable(key,L){
+  const rows=[...new Set(L.map(t=>t[key]))].sort().map(k=>{const m=metrics(L.filter(t=>t[key]===k));
+    return `<tr><td>${k}</td><td>${m.n}</td><td>${m.emp6}%</td><td class="${m.ret6<60?'bad':''}">${m.ret6}%</td><td>${m.wg}%</td><td>${inr(m.wage)}</td><td class="${m.mis>35?'bad':''}">${m.mis}%</td><td><b>${m.idx}</b></td></tr>`}).join('');
+  return `<div class="tw"><table><tr><th>${key[0].toUpperCase()+key.slice(1)}</th><th>Trainees</th><th>Employed @6m</th><th>Retention 3→6m</th><th>Wage growth 3→12m</th><th>Median wage</th><th>Job mismatch</th><th>Outcome index</th></tr>${rows}</table></div>`;
+}
+function riskTable(L){
+  const r=[...L].sort((a,b)=>b.risk-a.risk).slice(0,8).map(t=>`<tr><td>${t.id}</td><td>${t.course}</td><td>${t.district}</td><td class="bad">${Math.round(t.risk*100)}%</td><td>${t.risk_factors.join(' · ')||'—'}</td></tr>`).join('');
+  return `<div class="tw"><table><tr><th>ID</th><th>Course</th><th>District</th><th>Risk</th><th>Drivers</th></tr>${r}</table></div><p class="note">Rule-based scoring stands in for the scikit-learn attrition model in production. Decision support only — aggregated views for policymakers.</p>`;
+}
+function statusChart(id,L){
+  charts.push(new Chart($(id),{type:'bar',data:{labels:CP.map(m=>m+' months'),datasets:Object.keys(LBL).map(s=>({label:LBL[s],backgroundColor:COL[s],data:CP.map(m=>{const x=L.map(t=>at(t,m)).filter(Boolean);return pct(x.filter(c=>c.status===s).length,x.length)})}))},options:{scales:{x:{stacked:true},y:{stacked:true,max:100,title:{display:true,text:'% of trainees'}}}}}));
+}
+function reasonChart(id,L){
+  const c={};L.forEach(t=>t.checkpoints.forEach(x=>{if(x.reason)c[x.reason]=(c[x.reason]||0)+1}));
+  const e=Object.entries(c).sort((a,b)=>b[1]-a[1]);
+  charts.push(new Chart($(id),{type:'bar',data:{labels:e.map(x=>x[0]),datasets:[{data:e.map(x=>x[1]),backgroundColor:'#f28c28'}]},options:{indexAxis:'y',plugins:{legend:{display:false}}}}));
+}
+function kpiRow(m){return `<div class="kpis">${kpi('Trainees tracked',m.n)}${kpi('Employed @6 months',m.emp6+'%','incl. self-employed & apprentices')}${kpi('Retention 3→6m',m.ret6+'%')}${kpi('Self-employed @6m',m.self6+'%')}${kpi('Median wage growth',m.wg+'%','3→12 months')}${kpi('Verified outcomes',m.ver+'%','beyond self-report')}</div>`}
+
+function vGov(){
+  const L=D.filter(t=>filt.district==='All'||t.district===filt.district);
+  $('#view').innerHTML=`<div class="bar"><h2>Government dashboard</h2><label>District <select id="fd">${opts(['All',...uniq('district')],filt.district)}</select></label></div>${kpiRow(metrics(L))}
+  <div class="grid2"><div class="card"><h3>Outcome status by follow-up checkpoint</h3><canvas id="c1"></canvas></div><div class="card"><h3>Why trainees are unemployed or leave jobs</h3><canvas id="c2"></canvas></div></div>
+  <div class="card"><h3>Course-wise outcomes</h3>${gtable('course',L)}</div>
+  <div class="card"><h3>District-wise outcomes</h3>${gtable('district',D)}</div>
+  <div class="card"><h3>Attrition-risk watchlist</h3>${riskTable(L)}</div>`;
+  $('#fd').onchange=e=>{filt.district=e.target.value;render()};statusChart('#c1',L);reasonChart('#c2',L);
+}
+function vProv(){
+  const L=D.filter(t=>filt.provider==='All'||t.provider===filt.provider);
+  $('#view').innerHTML=`<div class="bar"><h2>Training provider view</h2><label>Provider <select id="fp">${opts(['All',...uniq('provider')],filt.provider)}</select></label></div>${kpiRow(metrics(L))}
+  <div class="grid2"><div class="card"><h3>Outcome status by checkpoint</h3><canvas id="c1"></canvas></div><div class="card"><h3>Reasons for non-placement / attrition</h3><canvas id="c2"></canvas></div></div>
+  <div class="card"><h3>Your courses</h3>${gtable('course',L)}</div>
+  <div class="card"><h3>Provider comparison</h3>${gtable('provider',D)}<p class="note">Outcome index = mean of employment @6m and retention. Production version normalises for cohort mix and district labour market.</p></div>`;
+  $('#fp').onchange=e=>{filt.provider=e.target.value;render()};statusChart('#c1',L);reasonChart('#c2',L);
+}
+function localClassify(x){const t=x.toLowerCase(),tags=Object.keys(RULES).filter(k=>RULES[k].some(w=>t.includes(w)));return{primary:tags[0]||(t.trim()?'Other':null),tags}}
+async function classify(x){if(live){try{const r=await fetch('/api/classify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:x})});if(r.ok)return await r.json()}catch(e){}}return localClassify(x)}
+function vTrainee(){
+  cur=cur||D[0].id;const t=D.find(x=>x.id===cur);
+  const chips=CP.map(m=>{const c=at(t,m);return `<div class="chip"><small>${m} months</small><b style="color:${c?COL[c.status]:'var(--mut)'}">${c?LBL[c.status]:'Pending'}</b>${c&&c.wage?inr(c.wage)+'/mo':''}${c&&c.reason?`<br><small>${c.reason}</small>`:''}</div>`}).join('');
+  $('#view').innerHTML=`<div class="bar"><h2>Trainee journey</h2><label>Trainee <select id="ft">${D.slice(0,60).map(x=>`<option ${x.id===cur?'selected':''}>${x.id}</option>`).join('')}</select></label></div>
+  <div class="card"><h3>${t.name} · ${t.course}</h3><p>${t.provider} · ${t.district} · consent on record: <span class="ok">Yes</span> · outcome confidence: <b>${VER[t.verification]}</b></p><div class="chips">${chips}</div></div>
+  <div class="card"><h3>Quick follow-up update (low-burden, self-reported)</h3><div class="row">
+   <label>Checkpoint<select id="fm">${CP.map(m=>`<option value="${m}">${m} months</option>`).join('')}</select></label>
+   <label>Status<select id="fs">${Object.keys(LBL).map(s=>`<option value="${s}">${LBL[s]}</option>`).join('')}</select></label>
+   <label>Monthly income (₹)<input id="fw" type="number" min="0" style="width:120px"></label>
+   <label style="flex:1;min-width:220px">Anything to tell us? (e.g. left because pay was low)<input id="fx"></label>
+   <button class="a" id="sub">Submit</button></div><p class="note" id="msg"></p></div>
+  <div class="card"><h3>Linked programme records</h3>${t.records.map(r=>`<span class="badge">${r.programme}: ${r.id}</span> `).join('')}</div>`;
+  $('#ft').onchange=e=>{cur=e.target.value;render()};
+  $('#sub').onclick=async()=>{const m=+$('#fm').value,st=$('#fs').value,w=+$('#fw').value||0,cl=await classify($('#fx').value);
+    const c={m,status:st,wage:POS.includes(st)?w:0,reason:cl.primary};const i=t.checkpoints.findIndex(x=>x.m===m);
+    if(i>=0)t.checkpoints[i]=c;else{t.checkpoints.push(c);t.checkpoints.sort((a,b)=>a.m-b.m)}
+    if(live)fetch(`/api/trainees/${t.id}/checkpoint`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({m,status:st,wage:c.wage,text:$('#fx').value})}).catch(()=>{});
+    render();$('#msg').textContent='Saved. Reason classified as: '+(cl.primary||'n/a');};
+}
+function vEmp(){
+  const P=D.filter(t=>{const c=latest(t);return c&&POS.includes(c.status)&&t.verification==='reported'}).slice(0,12);
+  $('#view').innerHTML=`<h2>Employer verification</h2><div class="card"><h3>Confirm employment in one tap</h3><div class="tw"><table><tr><th>Trainee</th><th>Role (course)</th><th>Reported income</th><th>Skill feedback (optional)</th><th></th></tr>${P.map(t=>`<tr><td>${t.id}</td><td>${t.course}</td><td>${inr(latest(t).wage)}</td><td><select id="sf-${t.id}"><option value="">—</option><option>Skills meet job needs</option><option>Needs more practical training</option><option>Needs soft-skills training</option></select></td><td><button class="a" data-id="${t.id}">Confirm</button></td></tr>`).join('')||'<tr><td colspan="5">Nothing pending 🎉</td></tr>'}</table></div>
+  <p class="note">Confirmed records move from "self-reported" to "employer-confirmed" confidence. Registry matching (EPFO/UDYAM) is a future integration.</p></div>`;
+  document.querySelectorAll('button[data-id]').forEach(b=>b.onclick=()=>{const t=D.find(x=>x.id===b.dataset.id);t.verification='employer_verified';t.skill_feedback=$('#sf-'+t.id).value||null;
+    if(live)fetch(`/api/trainees/${t.id}/verify`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({skill_feedback:t.skill_feedback})}).catch(()=>{});render()});
+}
+function vLink(){
+  const key=(r,d)=>d+'|'+r.name.toLowerCase().replace(/[^a-z ]/g,'').split(/\s+/).filter(x=>x.length>1).sort().join('-');
+  const S=D.filter(t=>t.records.length>1).slice(0,10);
+  $('#view').innerHTML=`<h2>Cross-programme identity linkage</h2><div class="card"><p>Different programmes issue different IDs and spell names differently. Consent-based matching on a normalised key (date of birth + name tokens) resolves them to one longitudinal profile.</p><div class="tw"><table><tr><th>Programme records (as received)</th><th>Match key</th><th>Unified ID</th></tr>${S.map(t=>`<tr><td>${t.records.map(r=>`<span class="badge">${r.programme} ${r.id}</span> ${r.name}`).join('<br>')}</td><td><code>${key(t.records[0],t.dob)}</code><br><small class="note">${new Set(t.records.map(r=>key(r,t.dob))).size===1?'all records agree':'mismatch'}</small></td><td><b>${t.id}</b></td></tr>`).join('')}</table></div><p class="note">Prototype uses deterministic normalisation. Production adds fuzzy scoring, hashed phone/ID tokens, human review of low-confidence matches, and a consent ledger (DPDP-aligned design).</p></div>`;
+}
+function render(){charts.forEach(c=>c.destroy());charts=[];document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.r===role));({gov:vGov,provider:vProv,trainee:vTrainee,employer:vEmp,link:vLink})[role]()}
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{role=b.dataset.r;render()});
+(async()=>{
+  try{const r=await fetch('/api/trainees');if(!r.ok)throw 0;D=(await r.json()).trainees;live=true}
+  catch(e){try{D=(await (await fetch('data.json')).json()).trainees}catch(e2){$('#view').innerHTML='<p>Could not load data. Run <code>python backend/seed.py</code> first.</p>';return}}
+  $('#mode').textContent=live?'Live API':'Static demo mode';$('#mode').classList.toggle('live',live);render();
+})();
+</script>
+</body>
+</html>
